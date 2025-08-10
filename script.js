@@ -1,5 +1,5 @@
 // VLM-5030風 ルールTTS (#KGNINJA)
-// テキスト→CV音素→有声/無声励起→3フォルマントBPF→8kHz/量子化→WAV
+// テキスト→CV音素→有声/無声励起→3フォルマントBPF(並列)→8kHz/量子化→WAV
 
 // ---- プリセット ----
 function setPreset(text) {
@@ -51,7 +51,7 @@ function toPhonemes(input) {
   s = s.replace(/(キャ|キュ|キョ|シャ|シュ|ショ|チャ|チュ|チョ|ジャ|ジュ|ジョ|リャ|リュ|リョ)/g, m=>kataMap[m]||m);
   s = s.replace(/[ァ-ンー]/g, ch => kataMap[ch] || ch);
 
-  // 英語簡易置換（増やしたい語はここに）
+  // 英語簡易置換（必要に応じて拡張）
   s = s.replace(/\bFIRE\b/g, "FAI YA")
        .replace(/\bDESTROY\b/g, "DES TROI")
        .replace(/\bALL\b/g, "AUL")
@@ -75,7 +75,7 @@ function toPhonemes(input) {
     while (i < tok.length) {
       if (tok[i] === 'Q') { syl.push({c:'',v:'',len:0, gem:true}); i++; continue; }
 
-      // 子音クラスタ（CH/SH/TS、+R/L/Y結合、先行S等）
+      // 子音クラスタ（CH/SH/TS、+R/L/Y連結、先行S等）
       let c = '';
       if (tok.slice(i).startsWith('CH')) { c='CH'; i+=2; }
       else if (tok.slice(i).startsWith('SH')) { c='SH'; i+=2; }
@@ -93,7 +93,7 @@ function toPhonemes(input) {
       else if (tok[i]==='N' && (i===tok.length-1 || !VOW.test(tok[i+1]))) { syl.push({c:'N',v:'',len:60}); i++; continue; }
       else { i++; continue; }
 
-      syl.push({ c, v, len: 140 }); // 1音節140ms
+      syl.push({ c, v, len: 140 }); // 1音節=140ms（短すぎ回避）
     }
   });
 
@@ -137,7 +137,7 @@ async function render(exportWav=false){
   const phon = toPhonemes(textEl.value || "FIRE");
   phonemesEl.textContent = phon.map(p=>`${p.c}${p.v||''}${p.burst?'*':''}`).join(' ');
 
-  // 出力バッファ作成
+  // 出力バッファ
   const totalMs = phon.reduce((a,p)=>a+p.len,0)/rate + 300;
   const totalN  = Math.ceil(sr * (totalMs/1000));
   const out = new Float32Array(totalN);
@@ -161,11 +161,12 @@ async function render(exportWav=false){
       for(let n=0;n<frame;n++){
         const idx = t + n; if (idx>=out.length) break;
 
-        // 励起
+        // 励起（有声=パルス列 デューティ5%）
         let exc = 0;
         if (voiced){
           const ph = (idx % period);
-          exc = (ph < 2) ? 1.0 : 0.0;
+          const width = Math.max(1, Math.floor(period * 0.05)); // ★5%
+          exc = (ph < width) ? 1.0 : 0.0;
           if (syl.burst && k===0 && n<Math.min(40, frame)){
             const env = 1.1 * Math.exp(-n/100); exc += env;
           }
@@ -174,29 +175,30 @@ async function render(exportWav=false){
         }
         exc = exc*(1-noiseAmt) + (Math.random()*2-1)*noiseAmt;
 
-        // 3本のフォルマントBPFを直列1回ずつ
-        let y = exc;
-        for(let b=0;b<3;b++){
-          const fc = v ? baseFormants[b] : baseFormants[b] * (1 + (Math.random()-0.5)*0.12);
+        // ---- フォルマントBPF（並列合算）----
+        const gains = [1.0, 0.9, 0.6]; // 第3はやや抑える
+        let y = 0;
+        for (let b=0;b<3;b++){
+          const fc = v ? baseFormants[b] : baseFormants[b]*(1 + (Math.random()-0.5)*0.12);
           const bw = baseBw[b];
           const q  = Math.max(0.707, fc/(2*bw));
-          y = biquadBandpassSample1(y, fc, q, sr, bpStates[b]);
+          y += gains[b] * biquadBandpassSample1(exc, fc, q, sr, bpStates[b]);
         }
-        out[idx] += Math.max(-1, Math.min(1, y * 0.9 * formantGain));
+        out[idx] += Math.max(-1, Math.min(1, y * 1.6 * formantGain)); // ゲイン少し強め
       }
       t += frame;
     }
     t += Math.floor(sr*0.02); // 休符
   }
 
-  // ポストFX → 8kHz化
+  // ---- ポストFX → 8kHz化 ----
   const post = processBuffer(out, sr, { fsOut, bit, cabDelay });
 
-  // 既存再生を止める
+  // 既存再生を停止
   try { currentSource?.stop(0); } catch(e){}
   try { currentCtx?.close(); } catch(e){}
 
-  // 再生
+  // ---- 再生 ----
   const ctxPlay = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: fsOut });
   await ctxPlay.resume();
   const audioBuf = ctxPlay.createBuffer(1, post.length, fsOut);
@@ -207,7 +209,7 @@ async function render(exportWav=false){
 
   statusEl.textContent = exportWav ? "書き出し準備中…" : "再生中…";
 
-  // WAV書き出し
+  // ---- 書き出し ----
   if (exportWav){
     const wav = pcm16ToWav(post, fsOut);
     const blob = new Blob([wav], { type: "audio/wav" });
@@ -238,9 +240,9 @@ function biquadBandpassSample1(x, fc, q, fs, state){
 }
 
 function processBuffer(data, sr, {fsOut, bit, cabDelay}){
-  const lp = simpleOnePoleLP(data, sr, 4500); // 少し明るめ
+  const lp = simpleOnePoleLP(data, sr, 4500); // 明るめ
 
-  // 量子化
+  // 量子化（ビットクラッシュ）
   const step = Math.pow(2, bit)-1;
   for(let i=0;i<lp.length;i++){
     lp[i] = Math.round(((lp[i]+1)/2)*step)/step*2 - 1;
