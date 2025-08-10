@@ -1,19 +1,13 @@
 // VLM-5030風 ルールTTS (#KGNINJA)
-// 方針: テキスト→CV音素→有声/無声励起→フォルマント(BPF×3)→8kHz/ビットクラッシュ/帯域制限→WAV
-async function render(exportWav=false){
-  // 追加：双二次フィルタの状態をリセット
-  bp_z1 = [0,0,0];
-  bp_z2 = [0,0,0];
+// テキスト→CV音素→有声/無声励起→3フォルマントBPF→8kHz/量子化→WAV
 
-  const sr = parseInt(srEl.value,10) || 16000;
-  // ...
-}
-
+// プリセット
 function setPreset(text) {
   document.getElementById('text').value = text;
-  render(false); // 再生
+  render(false); // すぐ再生
 }
 
+// DOM参照
 const $ = (id) => document.getElementById(id);
 const textEl = $("text"), rateEl = $("rate"), pitchEl = $("pitch"), bitEl = $("bit"),
       noiseEl = $("noise"), phonemesEl = $("phonemes"), statusEl = $("status"),
@@ -22,14 +16,14 @@ const textEl = $("text"), rateEl = $("rate"), pitchEl = $("pitch"), bitEl = $("b
 $("speak").onclick = async () => render(false);
 $("export").onclick = async () => render(true);
 
-// --- 1) Grapheme→Phoneme（超簡易: ローマ字/カタカナ→CV配列） ---
+// -------- 1) Grapheme→Phoneme（簡易: ローマ字/カタカナ→CV配列） --------
 function toPhonemes(input) {
-  let s = input.trim()
+  let s = (input || "").trim()
     .replace(/[!?.、。]/g, " ")
     .replace(/\s+/g, " ")
     .toUpperCase();
 
-  // カタカナ→ローマ字(ごく一部)
+  // カタカナ→ローマ字(主要・拗音・促音・長音)
   const kataMap = {
     'ァ':'A','ィ':'I','ゥ':'U','ェ':'E','ォ':'O',
     'ア':'A','イ':'I','ウ':'U','エ':'E','オ':'O',
@@ -55,26 +49,28 @@ function toPhonemes(input) {
     'ッ':'Q', // 促音: 次子音の促進トリガ
     'ー':'-' // 長音
   };
-  // 2文字合成（ャュョ）を先に
+  // 2文字合成(ャュョ系)を先に
   s = s.replace(/(キャ|キュ|キョ|シャ|シュ|ショ|チャ|チュ|チョ|ジャ|ジュ|ジョ|リャ|リュ|リョ)/g, m=>kataMap[m]||m);
   // 単体
   s = s.replace(/[ァ-ンー]/g, ch => kataMap[ch] || ch);
 
-  // 英語簡易置換（FIRE, DESTROY, ALLなど最低限）
+  // 英語簡易置換
   s = s.replace(/\bFIRE\b/g, "FAI YA")
        .replace(/\bDESTROY\b/g, "DES TROI")
        .replace(/\bALL\b/g, "AUL")
        .replace(/\bTHEM\b/g, "ZEM")
-       .replace(/\bATTACK\b/g, "A TAK");
+       .replace(/\bATTACK\b/g, "A TAK")
+       .replace(/\bMISSION\b/g, "MI SHON")
+       .replace(/\bSTART\b/g, "STAAT")
+       .replace(/\bLASER\b/g, "LEI ZER");
 
-  // ローマ字→音素スライス（CH, SH, KY…先に）
+  // ローマ字→音素スライス
   const syl = [];
-  const tokens = s.split(/\s+/);
+  const tokens = s.split(/\s+/).filter(Boolean);
   tokens.forEach(tok=>{
-    // 長音記号→母音二重化
+    // 長音：母音重ね
     tok = tok.replace(/([AIUEO])-+/g, "$1$1");
-    // 促音Q処理: 次の子音を強勢/短破裂
-    let i=0; 
+    let i=0;
     while(i<tok.length){
       if(tok[i]==='Q'){ syl.push({c:'',v:'',len:0, gem:true}); i++; continue; }
       let c='', v='';
@@ -86,7 +82,7 @@ function toPhonemes(input) {
 
       if ("AIUEO".includes(tok[i])) { v=tok[i]; i++; }
       else if (tok[i]==='Y' && "AIUEO".includes(tok[i+1])) { c=(c||'')+'Y'; v=tok[i+1]; i+=2; }
-      else if (tok[i]==='N' && (i===tok.length-1 || !'AIUEO'.includes(tok[i+1]))) { // 撥音
+      else if (tok[i]==='N' && (i===tok.length-1 || !'AIUEO'.includes(tok[i+1]))) {
         syl.push({c:'N', v:'', len:60}); i++; continue;
       } else { i++; continue; }
 
@@ -94,7 +90,7 @@ function toPhonemes(input) {
     }
   });
 
-  // geminate（促音）を反映：直後子音の開始を短く強調
+  // 促音の反映（直後をburst）
   for(let j=0;j<syl.length-1;j++){
     if(syl[j].gem){
       syl[j].len=0;
@@ -105,7 +101,7 @@ function toPhonemes(input) {
   return syl.filter(s=>s.len>0 || s.c==='N');
 }
 
-// --- 2) 合成パラメータ（フォルマント中心） ---
+// -------- 2) 合成用パラメータ --------
 const VOWEL_FORMANTS = {
   'A': [700, 1100, 2450],
   'I': [300, 2400, 3000],
@@ -115,114 +111,124 @@ const VOWEL_FORMANTS = {
 };
 
 function consonantNoise(c) {
-  // 無声ノイズの帯域目安（超簡易）
+  // 無声ノイズ帯域（中心周波数, バンド幅）
   const map = {
     'S': [5000, 1200], 'SH':[3000,800], 'TS':[4500,1000], 'CH':[3500,900],
     'F':[2000,700], 'H':[1600,600], 'K':[2500,900], 'T':[4000,1200], 'P':[1500,600]
   };
   return map[c] || [2000, 900];
 }
-
 function consonantVoiced(c){
-  // 有声子音のフォルマント補正（軽く）
   const voiced = new Set(['B','D','G','Z','J','R','M','N','L','Y','W']);
   return voiced.has(c);
 }
 
-// --- 3) 合成本体（OfflineAudioContextでレンダリング→再生/書き出し） ---
+// -------- 3) 合成（手計算→そのまま再生/保存） --------
+let bp_z1 = [0,0,0], bp_z2 = [0,0,0]; // BPFの内部状態（3段）
+
 async function render(exportWav=false){
-  const sr = parseInt(srEl.value,10) || 16000;
-  const fsOut = parseInt(fsOutEl.value,10) || 8000;
+  // BPFの状態を毎回リセット（無音化/音色暴走対策）
+  bp_z1 = [0,0,0];
+  bp_z2 = [0,0,0];
+
+  const sr = parseInt(srEl.value,10) || 16000;     // 合成FS
+  const fsOut = parseInt(fsOutEl.value,10) || 8000; // 最終出力FS
   const bit = parseInt(bitEl.value,10);
   const formantGain = parseFloat(formantGainEl.value);
-  const baseF0 = parseFloat(pitchEl.value);       // Hz
-  const rate = parseFloat(rateEl.value);          // 話速係数
+  const baseF0 = parseFloat(pitchEl.value);
+  const rate = parseFloat(rateEl.value);
   const noiseAmt = parseFloat(noiseEl.value);
   const cabDelay = parseFloat(delayEl.value);
 
   const phon = toPhonemes(textEl.value || "FIRE");
   phonemesEl.textContent = phon.map(p=>`${p.c}${p.v || ''}${p.burst?'*':''}`).join(' ');
 
-  // 長さ見積もり
-  let durMs = phon.reduce((a,p)=>a+p.len, 0) / rate + 300;
-  const ctx = new OfflineAudioContext({ numberOfChannels: 1, length: Math.ceil(sr*durMs/1000), sampleRate: sr });
+  // 総サンプル長の見積もり
+  const totalMs = phon.reduce((a,p)=>a+p.len,0)/rate + 300;
+  const totalN = Math.ceil(sr * (totalMs/1000));
+  const out = new Float32Array(totalN);
 
-  // 合成: 1フレーム= 10ms
-  const frame = Math.floor(sr*0.01);
-  const buf = ctx.createBuffer(1, Math.ceil(sr*durMs/1000), sr);
-  const out = buf.getChannelData(0);
-
+  // 1フレーム=10msで処理
+  const frame = Math.max(1, Math.floor(sr * 0.01));
   let t = 0;
+
   for(const syl of phon){
     const frames = Math.max(1, Math.floor((syl.len/rate)/10));
     const v = syl.v || '';
     const c = syl.c || '';
     const voiced = (v!=='') || consonantVoiced(c);
-    const formants = v ? VOWEL_FORMANTS[v] : [ consonantNoise(c)[0], consonantNoise(c)[0]*1.6, consonantNoise(c)[0]*2.3 ];
-    const bw = v ? [90, 120, 160] : [ consonantNoise(c)[1], consonantNoise(c)[1]*1.3, consonantNoise(c)[1]*1.6 ];
+
+    // 目標フォルマント/帯域
+    const cn = consonantNoise(c);
+    const baseFormants = v ? VOWEL_FORMANTS[v] : [ cn[0], cn[0]*1.6, cn[0]*2.3 ];
+    const baseBw = v ? [90,120,160] : [ cn[1], cn[1]*1.3, cn[1]*1.6 ];
+
     let f0 = baseF0;
 
     for(let k=0;k<frames;k++){
-      // 微妙なF0揺らぎ
+      // 軽いF0ジッタ
       const jitter = (Math.random()-0.5)*4;
       const period = Math.max(1, Math.floor(sr/(f0 + jitter)));
 
-      // フレーム分生成
       for(let n=0;n<frame;n++){
         const idx = t + n;
         if(idx>=out.length) break;
 
-        // 励起: 有声=矩形パルス, 無声=ホワイトノイズ
+        // 励起：有声=パルス列、無声=ホワイトノイズ
         let exc = 0;
         if (voiced){
           const ph = (idx % period);
-          exc = (ph < 2) ? 1.0 : 0.0;  // パルス列
-          // 子音破裂
-          if (syl.burst && k===0 && n<Math.min(40, frame)) exc += 0.6;
+          exc = (ph < 2) ? 1.0 : 0.0; // パルス
+          // 破裂（先頭40msほど）
+          if (syl.burst && k===0 && n<Math.min(40, frame)) {
+            const env = 0.9 * Math.exp(-n/120);
+            exc += env;
+          }
         } else {
-          exc = (Math.random()*2-1);
+          exc = (Math.random()*2 - 1);
         }
-        // ノイズ成分を常に少し混ぜる（ザラつき）
+        // 常時ノイズを少量ミックス（ザラ感）
         exc = exc*(1-noiseAmt) + (Math.random()*2-1)*noiseAmt;
 
-        // 3バンドパス（フォルマント）通過: 双二次IIRを手計算近似
+        // 3段バンドパス（フォルマント）
         let y = exc;
         for(let b=0; b<3; b++){
-          const fc = formants[b];
-          const q = Math.max(0.707, fc/(2*bw[b]));
+          // 子音は少しランダム化してシャリ感
+          const fcJit = v ? 0 : baseFormants[b] * (1 + (Math.random()-0.5)*0.1);
+          const fc = v ? baseFormants[b] : fcJit;
+          const bw = baseBw[b];
+          const q = Math.max(0.707, fc/(2*bw));
           y = biquadBandpassSample(y, fc, q, sr);
         }
-
-        // クリップ＆出力
+        // 出力（軽くゲイン＆クリップ）
         out[idx] += Math.max(-1, Math.min(1, y * 0.9 * formantGain));
       }
       t += frame;
     }
-    // 休止(短間)
-    t += Math.floor(sr*0.02);
+    // 短休符
+    t += Math.floor(sr * 0.02);
   }
 
-  // ポストFX: ローパス(4kHz)→ビットクラッシュ→キャビネット風ディレイ→ハードクリップ
-  const post = processBuffer(ctx, out, sr, { fsOut, bit, cabDelay });
+  // ---- ポストFX：LPF→量子化→キャビネット風ディレイ→クリップ→8kHz化 ----
+  const post = processBuffer(out, sr, { fsOut, bit, cabDelay });
 
-  // 再生 or 書き出し
-  const bufNode = ctx.createBuffer(1, post.length, sr);
-  bufNode.copyToChannel(post,0);
-  const src = ctx.createBufferSource(); src.buffer = bufNode;
-  src.connect(ctx.destination); src.start();
-  const rendered = await ctx.startRendering();
+  // ---- 再生（fsOutでAudioContextを作る）----
+  const ctxPlay = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: fsOut });
+  await ctxPlay.resume(); // 自動再生ブロック対策（ユーザー操作内想定でも一応）
 
-  // 実再生
-  const playCtx = new AudioContext();
-  const pb = playCtx.createBuffer(1, rendered.length, rendered.sampleRate);
-  pb.copyToChannel(rendered.getChannelData(0),0);
-  const psrc = playCtx.createBufferSource(); psrc.buffer = pb; psrc.connect(playCtx.destination); psrc.start();
+  const audioBuf = ctxPlay.createBuffer(1, post.length, fsOut);
+  audioBuf.copyToChannel(post, 0);
+  const srcNode = ctxPlay.createBufferSource();
+  srcNode.buffer = audioBuf;
+  srcNode.connect(ctxPlay.destination);
+  srcNode.start();
 
   statusEl.textContent = exportWav ? "書き出し準備中…" : "再生中…";
 
-  if(exportWav){
-    const wav = pcm16ToWav(rendered.getChannelData(0), rendered.sampleRate);
-    const blob = new Blob([wav], {type:"audio/wav"});
+  // ---- 書き出し（16bit PCM, fsOut） ----
+  if (exportWav) {
+    const wav = pcm16ToWav(post, fsOut);
+    const blob = new Blob([wav], { type: "audio/wav" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
     a.download = "vlm5030_style.wav";
@@ -233,8 +239,9 @@ async function render(exportWav=false){
   }
 }
 
-// --- DSP小物 ---
-let bp_z1 = [0,0,0], bp_z2 = [0,0,0]; // 双二次の状態を3バンド分
+// -------- DSPユーティリティ --------
+
+// 双二次BPF（直列3段用の共有状態bp_z1/bp_z2を使用）
 function biquadBandpassSample(x, fc, q, fs){
   const w0 = 2*Math.PI*fc/fs;
   const alpha = Math.sin(w0)/(2*q);
@@ -245,30 +252,30 @@ function biquadBandpassSample(x, fc, q, fs){
   const a1 =  -2*Math.cos(w0);
   const a2 =   1 - alpha;
 
-  // 直列3段で使うため、各段の状態を別に持つ
+  // 3段直列
   let y = x;
   for(let i=0;i<3;i++){
-    const _b0=b0/_a(a0), _b1=b1/_a(a0), _b2=b2/_a(a0), _a1=a1/_a(a0), _a2=a2/_a(a0);
+    const _b0=b0/a0, _b1=b1/a0, _b2=b2/a0, _a1=a1/a0, _a2=a2/a0;
     const out = _b0*y + _b1*bp_z1[i] + _b2*bp_z2[i] - _a1*bp_z1[i] - _a2*bp_z2[i];
     bp_z2[i] = bp_z1[i];
     bp_z1[i] = out;
     y = out;
   }
   return y;
-  function _a(v){ return v===0?1e-9:v; }
 }
 
-function processBuffer(ctx, data, sr, {fsOut, bit, cabDelay}){
-  // ローパス(約4kHz)
-  const lp = simpleOnePoleLP(data, sr, 4000);
+// ポストFX
+function processBuffer(data, sr, {fsOut, bit, cabDelay}){
+  // ローパス(~4.2kHz)
+  const lp = simpleOnePoleLP(data, sr, 4200);
 
-  // ビットクラッシュ（量子化）
+  // 量子化（ビットクラッシュ）
   const step = Math.pow(2, bit)-1;
   for(let i=0;i<lp.length;i++){
     lp[i] = Math.round(((lp[i]+1)/2)*step)/step*2 - 1;
   }
 
-  // 短ディレイ（筐体反射）
+  // 短ディレイ（筐体反射的）
   const d = Math.floor(sr * cabDelay);
   if(d>4){
     for(let i=d;i<lp.length;i++){
@@ -276,13 +283,13 @@ function processBuffer(ctx, data, sr, {fsOut, bit, cabDelay}){
     }
   }
 
-  // ハードクリップ
+  // クリップ
   for(let i=0;i<lp.length;i++){
     lp[i] = Math.max(-0.98, Math.min(0.98, lp[i]));
   }
 
-  // 8kHzへダウンサンプル（線形補間なしの単純間引きで荒さを出す）
-  const ratio = Math.floor(sr/fsOut);
+  // 8kHzへダウンサンプル（ラフ間引きで荒さ出し）
+  const ratio = Math.max(1, Math.floor(sr/fsOut));
   const outLen = Math.floor(lp.length/ratio);
   const out = new Float32Array(outLen);
   for(let i=0;i<outLen;i++) out[i] = lp[i*ratio];
@@ -302,25 +309,25 @@ function simpleOnePoleLP(data, sr, cutoff){
   return out;
 }
 
-// PCM16 WAV
+// WAV(16bit PCM mono)
 function pcm16ToWav(float32, sampleRate){
   const len = float32.length;
   const buffer = new ArrayBuffer(44 + len*2);
   const view = new DataView(buffer);
 
-  function writeStr(o, s){ for(let i=0;i<s.length;i++) view.setUint8(o+i, s.charCodeAt(i)); }
+  const writeStr = (o, s) => { for(let i=0;i<s.length;i++) view.setUint8(o+i, s.charCodeAt(i)); };
 
   writeStr(0, "RIFF");
   view.setUint32(4, 36 + len*2, true);
   writeStr(8, "WAVE");
   writeStr(12,"fmt ");
-  view.setUint32(16, 16, true);       // PCM
-  view.setUint16(20, 1, true);        // PCM
-  view.setUint16(22, 1, true);        // mono
+  view.setUint32(16, 16, true);       // Subchunk1Size (PCM)
+  view.setUint16(20, 1, true);        // AudioFormat PCM
+  view.setUint16(22, 1, true);        // NumChannels mono
   view.setUint32(24, sampleRate, true);
-  view.setUint32(28, sampleRate*2, true);
-  view.setUint16(32, 2, true);        // block align
-  view.setUint16(34, 16, true);       // bits
+  view.setUint32(28, sampleRate*2, true); // ByteRate (sr*channels*2)
+  view.setUint16(32, 2, true);        // BlockAlign
+  view.setUint16(34, 16, true);       // BitsPerSample
   writeStr(36,"data");
   view.setUint32(40, len*2, true);
 
