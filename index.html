@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>VLM-5030風 ルールTTS (#KGNINJA)</title>
   <link rel="stylesheet" href="style.css" />
 </head>
@@ -15,13 +15,14 @@
   <main>
     <section class="controls">
       <textarea id="text" rows="4" placeholder="例: FIRE! / デストロイ ゼム オール"></textarea>
-      <div class="preset-buttons">
-  <button type="button" onclick="setPreset('FIRE!')">FIRE!</button>
-  <button type="button" onclick="setPreset('DESTROY THEM ALL!')">DESTROY THEM ALL!</button>
-  <button type="button" onclick="setPreset('ATTACK!')">ATTACK!</button>
-  <button type="button" onclick="setPreset('MISSION START!')">MISSION START!</button>
-</div>
 
+      <!-- プリセット -->
+      <div class="preset-buttons">
+        <button type="button" onclick="setPreset('FIRE!')">FIRE!</button>
+        <button type="button" onclick="setPreset('DESTROY THEM ALL!')">DESTROY THEM ALL!</button>
+        <button type="button" onclick="setPreset('ATTACK!')">ATTACK!</button>
+        <button type="button" onclick="setPreset('MISSION START!')">MISSION START!</button>
+      </div>
 
       <div class="row">
         <label>話速 <input type="range" id="rate" min="0.6" max="1.6" step="0.01" value="1.0"></label>
@@ -37,7 +38,7 @@
       </div>
 
       <details>
-        <summary>高度設定</summary>
+        <summary>▼ 高度設定</summary>
         <div class="row">
           <label>サンプリング周波数(合成) <input id="sr" type="number" value="16000"></label>
           <label>最終出力FS <input id="fsOut" type="number" value="8000"></label>
@@ -54,8 +55,7 @@
   </main>
 
   <footer>
-    <small>© https://buymeacoffee.com/kgninja/ #KGNINJA — “VLM-5030風”は質感の再現です。商標等は各社に帰属します。</small>
-    
+    <small>© KG / #KGNINJA — “VLM-5030風”は質感の再現です。商標等は各社に帰属します。</small>
   </footer>
 
   <script src="script.js"></script>
