@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>VLM-5030風 ルールTTS (#KGNINJA)</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <h1>VLM-5030風 ルールTTS</h1>
+    <p>テキスト → 音素（ローマ字/カタカナ対応） → パルス/ノイズ励起 → フォルマント合成 → 8kHz/ビットクラッシュ</p>
+  </header>
+
+  <main>
+    <section class="controls">
+      <textarea id="text" rows="4" placeholder="例: FIRE! / デストロイ ゼム オール"></textarea>
+
+      <div class="row">
+        <label>話速 <input type="range" id="rate" min="0.6" max="1.6" step="0.01" value="1.0"></label>
+        <label>ピッチ <input type="range" id="pitch" min="70" max="180" step="1" value="120"> Hz</label>
+        <label>ガラつき(量子化) <input type="range" id="bit" min="3" max="8" step="1" value="5"> bit</label>
+        <label>ノイズ量 <input type="range" id="noise" min="0" max="1" step="0.01" value="0.18"></label>
+      </div>
+
+      <div class="row">
+        <button id="speak">▶ 再生</button>
+        <button id="export">💾 WAV書き出し</button>
+        <span id="status"></span>
+      </div>
+
+      <details>
+        <summary>高度設定</summary>
+        <div class="row">
+          <label>サンプリング周波数(合成) <input id="sr" type="number" value="16000"></label>
+          <label>最終出力FS <input id="fsOut" type="number" value="8000"></label>
+          <label>フォルマント強調 <input type="range" id="formantGain" min="0.5" max="2.0" step="0.01" value="1.2"></label>
+          <label>ディレイ(筐体鳴り) <input type="range" id="delay" min="0" max="0.08" step="0.002" value="0.045"> s</label>
+        </div>
+      </details>
+    </section>
+
+    <section>
+      <h3>音素結果</h3>
+      <pre id="phonemes"></pre>
+    </section>
+  </main>
+
+  <footer>
+    <small>© KG / #KGNINJA — “VLM-5030風”は質感の再現です。商標等は各社に帰属します。</small>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>
