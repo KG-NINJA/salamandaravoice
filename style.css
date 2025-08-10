@@ -13,10 +13,11 @@ button:hover { filter: brightness(1.1); }
 pre { background: #0e131c; border: 1px solid #2a344a; padding: 12px; border-radius: 8px; min-height: 64px; white-space: pre-wrap; }
 footer { padding: 14px 20px; border-top: 1px solid #263044; color: #a9b6d6; }
 details summary { cursor: pointer; margin: 8px 0; }
+
 .preset-buttons {
   display: flex;
   gap: 8px;
-  margin-top: 8px;
+  margin: 8px 0 4px;
 }
 .preset-buttons button {
   background: #2b3a63;
