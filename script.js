@@ -13,6 +13,35 @@ const textEl = $("text"), rateEl = $("rate"), pitchEl = $("pitch"), bitEl = $("b
       noiseEl = $("noise"), phonemesEl = $("phonemes"), statusEl = $("status"),
       srEl = $("sr"), fsOutEl = $("fsOut"), formantGainEl = $("formantGain"), delayEl = $("delay");
 
+const DEFAULTS = {
+  bit: parseInt(bitEl.value, 10),
+  formantGain: parseFloat(formantGainEl.value),
+  baseF0: parseFloat(pitchEl.value),
+  rate: parseFloat(rateEl.value),
+  noiseAmt: parseFloat(noiseEl.value),
+  cabDelay: parseFloat(delayEl.value),
+};
+
+function sanitizeParam(el, parser, def, min, max) {
+  let val = parser(el.value);
+  if (!Number.isFinite(val)) val = def;
+  if (min !== undefined) val = Math.max(min, val);
+  if (max !== undefined) val = Math.min(max, val);
+  el.value = val;
+  return val;
+}
+
+[
+  [bitEl, (v) => parseInt(v, 10), DEFAULTS.bit, 3, 8],
+  [formantGainEl, parseFloat, DEFAULTS.formantGain, 0.5, 2.0],
+  [pitchEl, parseFloat, DEFAULTS.baseF0, 70, 180],
+  [rateEl, parseFloat, DEFAULTS.rate, 0.6, 1.6],
+  [noiseEl, parseFloat, DEFAULTS.noiseAmt, 0.02, 1],
+  [delayEl, parseFloat, DEFAULTS.cabDelay, 0, 0.08],
+].forEach(([el, parser, def, min, max]) => {
+  el.addEventListener("change", () => sanitizeParam(el, parser, def, min, max));
+});
+
 $("speak").onclick = async () => render(false);
 $("export").onclick = async () => render(true);
 
@@ -127,12 +156,12 @@ async function render(exportWav=false){
   if (!Number.isFinite(fsOut) || fsOut<4000) fsOut = 8000;
   if (fsOut > sr) fsOut = sr; // 安全ガード
 
-  const bit = parseInt(bitEl.value,10);
-  const formantGain = parseFloat(formantGainEl.value);
-  const baseF0 = parseFloat(pitchEl.value);
-  const rate = parseFloat(rateEl.value);
-  const noiseAmt = Math.max(0.02, parseFloat(noiseEl.value)); // 完全無ノイズは避ける
-  const cabDelay = parseFloat(delayEl.value);
+  const bit = sanitizeParam(bitEl, (v) => parseInt(v, 10), DEFAULTS.bit, 3, 8);
+  const formantGain = sanitizeParam(formantGainEl, parseFloat, DEFAULTS.formantGain, 0.5, 2.0);
+  const baseF0 = sanitizeParam(pitchEl, parseFloat, DEFAULTS.baseF0, 70, 180);
+  const rate = sanitizeParam(rateEl, parseFloat, DEFAULTS.rate, 0.6, 1.6);
+  const noiseAmt = sanitizeParam(noiseEl, parseFloat, DEFAULTS.noiseAmt, 0.02, 1); // 完全無ノイズは避ける
+  const cabDelay = sanitizeParam(delayEl, parseFloat, DEFAULTS.cabDelay, 0, 0.08);
 
   const phon = toPhonemes(textEl.value || "FIRE");
   phonemesEl.textContent = phon.map(p=>`${p.c}${p.v||''}${p.burst?'*':''}`).join(' ');
