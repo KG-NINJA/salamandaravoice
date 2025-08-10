@@ -23,6 +23,16 @@
         <button type="button" onclick="setPreset('ATTACK!')">ATTACK!</button>
         <button type="button" onclick="setPreset('MISSION START!')">MISSION START!</button>
       </div>
+      
+      <!-- 新規プリセット -->
+      <div class="preset-buttons">
+        <button type="button" onclick="setPreset('LAUNCH!')">LAUNCH!</button>
+        <button type="button" onclick="setPreset('LASER READY!')">LASER READY!</button>
+        <button type="button" onclick="setPreset('WARNING!')">WARNING!</button>
+        <button type="button" onclick="setPreset('MISSION COMPLETE!')">MISSION COMPLETE!</button>
+        <button type="button" onclick="setPreset('POWER UP!')">POWER UP!</button>
+        <button type="button" onclick="setPreset('TARGET DESTROYED!')">TARGET DESTROYED!</button>
+      </div>
 
       <div class="row">
         <label>話速 <input type="range" id="rate" min="0.6" max="1.6" step="0.01" value="1.0"></label>
@@ -44,6 +54,7 @@
           <label>最終出力FS <input id="fsOut" type="number" value="8000"></label>
           <label>フォルマント強調 <input type="range" id="formantGain" min="0.5" max="2.0" step="0.01" value="1.2"></label>
           <label>ディレイ(筐体鳴り) <input type="range" id="delay" min="0" max="0.08" step="0.002" value="0.045"> s</label>
+          <label><input type="checkbox" id="brightConsonant" checked> 子音シャリ感</label>
         </div>
       </details>
     </section>
@@ -55,9 +66,9 @@
   </main>
 
   <footer>
-    <small>© KG / #KGNINJA — “VLM-5030風”は質感の再現です。商標等は各社に帰属します。</small>
+    <small>© KG / #KGNINJA — "VLM-5030風"は質感の再現です。商標等は各社に帰属します。</small>
   </footer>
 
-  <script src="script.js"></script>
+  <script type="module" src="script.js"></script>
 </body>
 </html>
