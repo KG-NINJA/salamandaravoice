@@ -80,6 +80,12 @@ function toPhonemes(input) {
       if (tok.slice(i).startsWith('CH')) { c='CH'; i+=2; }
       else if (tok.slice(i).startsWith('SH')) { c='SH'; i+=2; }
       else if (tok.slice(i).startsWith('TS')) { c='TS'; i+=2; }
+      else if (
+        tok[i] === 'S' &&
+        i + 2 < tok.length &&
+        CONS.test(tok[i + 1]) &&
+        tok[i + 2] === 'R'
+      ) { c = tok.slice(i, i + 3); i += 3; }
       else if (CONS.test(tok[i])) {
         c = tok[i]; i++;
         if (i<tok.length && /[RLY]/.test(tok[i])) { c += tok[i]; i++; }
