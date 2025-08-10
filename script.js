@@ -257,7 +257,8 @@ function biquadBandpassSample1(x, fc, q, fs, state){
 }
 
 function processBuffer(data, sr, {fsOut, bit, cabDelay}){
-  const lp = simpleOnePoleLP(data, sr, 4500); // 明るめ
+  const cutoff = Math.min(4500, fsOut/2 - 100); // Nyquist安全マージン
+  const lp = simpleOnePoleLP(data, sr, cutoff); // ローパス（エイリアス防止）
 
   // 量子化（ビットクラッシュ）
   const step = Math.pow(2, bit)-1;
