@@ -1,6 +1,9 @@
 // VLM-5030風 ルールTTS (#KGNINJA)
 // テキスト→CV音素→有声/無声励起→3フォルマントBPF(並列)→8kHz/量子化→WAV
 
+// Global debug flag. Set to true to enable detailed logging.
+window.DEBUG = false;
+
 // ---- プリセット ----
 function setPreset(text) {
   document.getElementById('text').value = text;
@@ -193,6 +196,20 @@ async function render(exportWav=false){
 
   // ---- ポストFX → 8kHz化 ----
   const post = processBuffer(out, sr, { fsOut, bit, cabDelay });
+
+  // Debug logging
+  if (window.DEBUG) {
+    const ratio = Math.max(1, Math.floor(sr / fsOut));
+    const meanAmp = post.slice(0, 100).reduce((a, v) => a + Math.abs(v), 0) /
+                    Math.min(100, post.length);
+    console.table(phon);
+    console.table([
+      { stage: 'input', samples: out.length },
+      { stage: 'output', samples: post.length }
+    ]);
+    console.table([{ sr, fsOut, ratio }]);
+    console.table([{ meanAmpFirst100: meanAmp }]);
+  }
 
   // 既存再生を停止
   try { currentSource?.stop(0); } catch(e){}
