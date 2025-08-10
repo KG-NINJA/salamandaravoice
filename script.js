@@ -1,5 +1,18 @@
 // VLM-5030風 ルールTTS (#KGNINJA)
 // 方針: テキスト→CV音素→有声/無声励起→フォルマント(BPF×3)→8kHz/ビットクラッシュ/帯域制限→WAV
+async function render(exportWav=false){
+  // 追加：双二次フィルタの状態をリセット
+  bp_z1 = [0,0,0];
+  bp_z2 = [0,0,0];
+
+  const sr = parseInt(srEl.value,10) || 16000;
+  // ...
+}
+
+function setPreset(text) {
+  document.getElementById('text').value = text;
+  render(false); // 再生
+}
 
 const $ = (id) => document.getElementById(id);
 const textEl = $("text"), rateEl = $("rate"), pitchEl = $("pitch"), bitEl = $("bit"),
