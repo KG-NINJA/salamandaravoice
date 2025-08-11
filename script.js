@@ -151,6 +151,18 @@ function consonantNoise(c){
 }
 function consonantVoiced(c){ return new Set(['B','D','G','Z','J','R','M','N','L','Y','W']).has(c); }
 
+function baseFormantsFor(syl){
+  if(!syl) return [500,1500,2500];
+  const v = syl.v || '';
+  const c = syl.c || '';
+  if(v){
+    return VOWEL_FORMANTS[v];
+  } else {
+    const cn = consonantNoise(c);
+    return [cn[0], cn[0]*1.6, cn[0]*2.3];
+  }
+}
+
 // ==== 3) 合成 ====
 let bpStates = [{x1:0,x2:0,y1:0,y2:0},{x1:0,x2:0,y1:0,y2:0},{x1:0,x2:0,y1:0,y2:0}];
 let currentCtx = null, currentSource = null;
@@ -183,14 +195,20 @@ async function render(exportWav=false){
   const frame = Math.max(1, Math.floor(sr*0.01));
   let t = 0;
 
-  for(const syl of phon){
+  for(let i=0;i<phon.length;i++){
+    const syl = phon[i];
     const frames = Math.max(1, Math.floor((syl.len/rate)/10));
     const v = syl.v || ''; const c = syl.c || '';
     const voiced = (v!=='') || consonantVoiced(c);
     const cn = consonantNoise(c);
     const baseFormants = v ? VOWEL_FORMANTS[v] : [cn[0], cn[0]*1.6, cn[0]*2.3];
     const baseBw       = v ? [90,120,160]     : [cn[1], cn[1]*1.3, cn[1]*1.6];
+    const prevFormants = baseFormantsFor(phon[i-1] || syl);
+    const nextFormants = baseFormantsFor(phon[i+1] || syl);
     let f0 = baseF0;
+    const totalSamples = frames * frame;
+    const transSamples = Math.min(Math.floor(sr*0.02), Math.floor(totalSamples/2));
+    let sampleInSyl = 0;
 
     for(let k=0;k<frames;k++){
       const jitter = (Math.random()-0.5)*4;
@@ -219,12 +237,21 @@ async function render(exportWav=false){
         const gains = [1.0, 0.9, 0.6]; // 第3はやや抑える
         let y = 0;
         for (let b=0;b<3;b++){
-          const fc = v ? baseFormants[b] : baseFormants[b]*(1 + (Math.random()-0.5)*0.12);
+          let fcTarget = baseFormants[b];
+          if (sampleInSyl < transSamples) {
+            const r = sampleInSyl / transSamples;
+            fcTarget = prevFormants[b] + (baseFormants[b] - prevFormants[b]) * r;
+          } else if (sampleInSyl >= totalSamples - transSamples) {
+            const r = (sampleInSyl - (totalSamples - transSamples)) / transSamples;
+            fcTarget = baseFormants[b] + (nextFormants[b] - baseFormants[b]) * r;
+          }
+          const fc = v ? fcTarget : fcTarget * (1 + (Math.random()-0.5)*0.1);
           const bw = baseBw[b];
           const q  = Math.max(0.707, fc/(2*bw));
           y += gains[b] * biquadBandpassSample1(exc, fc, q, sr, bpStates[b]);
         }
         out[idx] += Math.max(-1, Math.min(1, y * 1.6 * formantGain)); // ゲイン少し強め
+        sampleInSyl++;
       }
       t += frame;
     }
