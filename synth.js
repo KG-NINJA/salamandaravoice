@@ -137,9 +137,12 @@ function synthesize(phon, params) {
           exc = (Math.random() * 2 - 1);
         }
         
-        // 常時ノイズを少量ミックス（ザラ感）- 最小値を0.02に底上げ
-        const effectiveNoiseAmt = Math.max(0.02, noiseAmt);
-        exc = exc * (1 - effectiveNoiseAmt) + (Math.random() * 2 - 1) * effectiveNoiseAmt;
+        // ノイズミックス: 有声は固定で0.05、無声はスライダ値を使用
+        const effectiveNoiseAmt = voiced
+          ? 0.05
+          : Math.max(0.02, noiseAmt);
+        exc = exc * (1 - effectiveNoiseAmt) +
+          (Math.random() * 2 - 1) * effectiveNoiseAmt;
 
         // 3段BPF（フォルマント）
         let y = exc;

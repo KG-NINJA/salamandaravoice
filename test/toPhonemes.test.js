@@ -7,7 +7,7 @@ const path = require('path');
 const code = fs.readFileSync(path.join(__dirname, '..', 'script.js'), 'utf8');
 const context = {
   console,
-  document: { getElementById: () => ({}) },
+  document: { getElementById: () => ({ addEventListener: () => {} }) },
   window: {}
 };
 vm.createContext(context);
