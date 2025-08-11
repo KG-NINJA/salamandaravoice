@@ -133,9 +133,6 @@ function synthesize(phon, params) {
           exc = (Math.random() * 2 - 1);
         }
 
-        // 常時ノイズを少量ミックス（ザラ感）- 最小値を0.02に底上げ
-        const effectiveNoiseAmt = Math.max(0.02, noiseAmt);
-        exc = exc * (1 - effectiveNoiseAmt) + (Math.random() * 2 - 1) * effectiveNoiseAmt;
 
         // 攻撃/減衰エンベロープ（5ms）
         const pos = k * frame + n;
