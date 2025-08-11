@@ -114,6 +114,8 @@ function synthesize(phon, params) {
 
     let f0 = baseF0;
 
+    const sylSamples = frames * frame;
+    const fadeSamps = Math.min(Math.floor(sr * 0.005), Math.floor(sylSamples / 2));
     for (let k = 0; k < frames; k++) {
       const jitter = (Math.random() - 0.5) * 4;
       const period = Math.max(1, Math.floor(sr / (f0 + jitter)));
@@ -127,19 +129,28 @@ function synthesize(phon, params) {
         if (voiced) {
           const ph = (idx % period);
           exc = (ph < 2) ? 1.0 : 0.0;
-          
-          // 破裂音強化: 先頭40msのエンベロープを強化
-          if (syl.burst && k === 0 && n < Math.min(40, frame)) {
-            const env = 1.1 * Math.exp(-n / 100);
-            exc += env;
-          }
         } else {
           exc = (Math.random() * 2 - 1);
         }
-        
+
         // 常時ノイズを少量ミックス（ザラ感）- 最小値を0.02に底上げ
         const effectiveNoiseAmt = Math.max(0.02, noiseAmt);
         exc = exc * (1 - effectiveNoiseAmt) + (Math.random() * 2 - 1) * effectiveNoiseAmt;
+
+        // 攻撃/減衰エンベロープ（5ms）
+        const pos = k * frame + n;
+        if (fadeSamps > 0) {
+          let env = 1;
+          if (pos < fadeSamps) env = pos / fadeSamps;
+          else if (pos >= sylSamples - fadeSamps) env = (sylSamples - pos) / fadeSamps;
+          exc *= env; // コメントアウトで比較可
+        }
+
+        // 破裂音強化: 先頭40msのみ別途加算
+        if (syl.burst && k === 0 && n < Math.min(40, frame)) {
+          const burstEnv = 1.1 * Math.exp(-n / 100);
+          exc += burstEnv;
+        }
 
         // 3段BPF（フォルマント）
         let y = exc;
@@ -149,12 +160,12 @@ function synthesize(phon, params) {
           if (!v && b === 2 && brightConsonant) {
             fc *= (1 + 0.1 + Math.random() * 0.05);
           }
-          
+
           const bw = baseBw[b];
           const q = Math.max(0.707, fc / (2 * bw));
           y = biquadBandpassSample(y, fc, q, sr);
         }
-        
+
         out[idx] += Math.max(-1, Math.min(1, y * 0.9));
       }
       t += frame;
