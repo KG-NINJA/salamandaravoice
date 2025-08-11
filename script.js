@@ -211,7 +211,9 @@ async function render(exportWav=false){
         } else {
           exc = (Math.random()*2 - 1);
         }
-        exc = exc*(1-noiseAmt) + (Math.random()*2-1)*noiseAmt;
+        // 有声/無声でノイズ量を切り替える（有声は0.05固定）
+        const effectiveNoiseAmt = voiced ? 0.05 : noiseAmt;
+        exc = exc*(1-effectiveNoiseAmt) + (Math.random()*2-1)*effectiveNoiseAmt;
 
         // ---- フォルマントBPF（並列合算）----
         const gains = [1.0, 0.9, 0.6]; // 第3はやや抑える
