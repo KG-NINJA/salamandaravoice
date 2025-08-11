@@ -210,6 +210,8 @@ async function render(exportWav=false){
     const transSamples = Math.min(Math.floor(sr*0.02), Math.floor(totalSamples/2));
     let sampleInSyl = 0;
 
+    const sylSamples = frames * frame;
+    const fadeSamps = Math.min(Math.floor(sr * 0.005), Math.floor(sylSamples / 2));
     for(let k=0;k<frames;k++){
       const jitter = (Math.random()-0.5)*4;
       const period = Math.max(1, Math.floor(sr/(f0 + jitter)));
@@ -223,15 +225,27 @@ async function render(exportWav=false){
           const ph = (idx % period);
           const width = Math.max(1, Math.floor(period * 0.05)); // ★5%
           exc = (ph < width) ? 1.0 : 0.0;
-          if (syl.burst && k===0 && n<Math.min(40, frame)){
-            const env = 1.1 * Math.exp(-n/100); exc += env;
-          }
         } else {
           exc = (Math.random()*2 - 1);
         }
         // 有声/無声でノイズ量を切り替える（有声は0.05固定）
         const effectiveNoiseAmt = voiced ? 0.05 : noiseAmt;
         exc = exc*(1-effectiveNoiseAmt) + (Math.random()*2-1)*effectiveNoiseAmt;
+
+        // アタック/ディケイエンベロープ（5ms）
+        const pos = k * frame + n;
+        if (fadeSamps > 0){
+          let env = 1;
+          if (pos < fadeSamps) env = pos / fadeSamps;
+          else if (pos >= sylSamples - fadeSamps) env = (sylSamples - pos) / fadeSamps;
+          exc *= env; // 比較用にコメントアウト可
+        }
+
+        // 破裂音強化: 先頭40msのみ別途加算
+        if (voiced && syl.burst && k===0 && n<Math.min(40, frame)){
+          const burstEnv = 1.1 * Math.exp(-n/100);
+          exc += burstEnv;
+        }
 
         // ---- フォルマントBPF（並列合算）----
         const gains = [1.0, 0.9, 0.6]; // 第3はやや抑える
