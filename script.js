@@ -80,7 +80,7 @@ function baseFormantsFor(syl){
 let bpStates = [{x1:0,x2:0,y1:0,y2:0},{x1:0,x2:0,y1:0,y2:0},{x1:0,x2:0,y1:0,y2:0}];
 let currentCtx = null, currentSource = null;
 
-async function render(exportWav=false){
+async function render(exportWav=false, rng = Math.random){
   // BPF状態リセット
   bpStates = [{x1:0,x2:0,y1:0,y2:0},{x1:0,x2:0,y1:0,y2:0},{x1:0,x2:0,y1:0,y2:0}];
 
@@ -126,7 +126,7 @@ async function render(exportWav=false){
     const sylSamples = frames * frame;
     const fadeSamps = Math.min(Math.floor(sr * 0.005), Math.floor(sylSamples / 2));
     for(let k=0;k<frames;k++){
-      const jitter = (Math.random()-0.5)*4;
+      const jitter = (rng()-0.5)*4;
       const period = Math.max(1, Math.floor(sr/(f0 + jitter)));
 
       for(let n=0;n<frame;n++){
@@ -139,11 +139,11 @@ async function render(exportWav=false){
           const width = Math.max(1, Math.floor(period * 0.05)); // ★5%
           exc = (ph < width) ? 1.0 : 0.0;
         } else {
-          exc = (Math.random()*2 - 1);
+          exc = (rng()*2 - 1);
         }
         // 有声/無声でノイズ量を切り替える（有声は0.05固定）
         const effectiveNoiseAmt = voiced ? 0.05 : noiseAmt;
-        exc = exc*(1-effectiveNoiseAmt) + (Math.random()*2-1)*effectiveNoiseAmt;
+        exc = exc*(1-effectiveNoiseAmt) + (rng()*2-1)*effectiveNoiseAmt;
 
         // アタック/ディケイエンベロープ（5ms）
         const pos = k * frame + n;
@@ -172,7 +172,7 @@ async function render(exportWav=false){
             const r = (sampleInSyl - (totalSamples - transSamples)) / transSamples;
             fcTarget = baseFormants[b] + (nextFormants[b] - baseFormants[b]) * r;
           }
-          const fc = v ? fcTarget : fcTarget * (1 + (Math.random()-0.5)*0.1);
+          const fc = v ? fcTarget : fcTarget * (1 + (rng()-0.5)*0.1);
           const bw = baseBw[b];
           const q  = Math.max(0.707, fc/(2*bw));
           y += gains[b] * biquadBandpassSample1(exc, fc, q, sr, bpStates[b]);
