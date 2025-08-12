@@ -30,7 +30,7 @@ function simpleOnePoleLP(data, sr, cutoff) {
  * @returns {Float32Array} - Processed audio data
  */
 function processBuffer(data, sr, options) {
-  const { fsOut, bit, cabDelay, brightConsonant = false } = options;
+  const { fsOut, bit, cabDelay, brightConsonant = false, vocoder = false } = options;
   
   // Ensure fsOut doesn't exceed sr
   const safefsOut = Math.min(fsOut, sr);
@@ -38,6 +38,27 @@ function processBuffer(data, sr, options) {
   // ローパス(~4.5kHz for bright consonants, otherwise 4.2kHz)
   const lpCutoff = brightConsonant ? 4500 : 4200;
   const lp = simpleOnePoleLP(data, sr, lpCutoff);
+
+  // Vocoder-style ring modulation (saw carrier 100-200 Hz)
+  if (vocoder) {
+    const freq = 150; // middle of 100-200 Hz range
+    const inc = freq / sr;
+    let phase = 0;
+    let preRms = 0;
+    let postRms = 0;
+    for (let i = 0; i < lp.length; i++) preRms += lp[i] * lp[i];
+    for (let i = 0; i < lp.length; i++) {
+      phase += inc;
+      if (phase >= 1) phase -= 1;
+      const carrier = 2 * phase - 1; // saw -1..1
+      lp[i] *= carrier;
+      postRms += lp[i] * lp[i];
+    }
+    const gain = Math.sqrt(preRms / (postRms || 1));
+    for (let i = 0; i < lp.length; i++) {
+      lp[i] = Math.tanh(lp[i] * gain * 1.2); // mild compression
+    }
+  }
 
   // 量子化（ビットクラッシュ）
   const step = Math.pow(2, bit) - 1;
