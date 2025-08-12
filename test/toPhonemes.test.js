@@ -1,25 +1,22 @@
 const assert = require('assert');
-const fs = require('fs');
-const vm = require('vm');
 const path = require('path');
+const { pathToFileURL } = require('url');
 
-// Load script.js into a sandboxed context with minimal DOM stubs
-const code = fs.readFileSync(path.join(__dirname, '..', 'script.js'), 'utf8');
-const context = {
-  console,
-  document: { getElementById: () => ({ addEventListener: () => {} }) },
-  window: {}
-};
-vm.createContext(context);
-vm.runInContext(code, context);
-const toPhonemes = context.toPhonemes;
+async function load() {
+  return await import(pathToFileURL(path.join(__dirname, '..', 'phoneme.js')).href);
+}
 
-const stringRes = toPhonemes('STRING');
-assert.strictEqual(stringRes[0].c, 'STR');
-assert.strictEqual(stringRes[0].v, 'I');
+(async () => {
+  const { toPhonemes } = await load();
 
-const sprintRes = toPhonemes('SPRINT');
-assert.strictEqual(sprintRes[0].c, 'SPR');
-assert.strictEqual(sprintRes[0].v, 'I');
+  const stringRes = toPhonemes('STRING');
+  assert.strictEqual(stringRes[0].c, 'STR');
+  assert.strictEqual(stringRes[0].v, 'I');
 
-console.log('toPhonemes cluster tests passed');
+  const sprintRes = toPhonemes('SPRINT');
+  assert.strictEqual(sprintRes[0].c, 'SPR');
+  assert.strictEqual(sprintRes[0].v, 'I');
+
+  console.log('toPhonemes cluster tests passed');
+})();
+
