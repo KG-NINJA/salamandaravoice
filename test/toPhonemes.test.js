@@ -1,25 +1,42 @@
 const assert = require('assert');
-const fs = require('fs');
-const vm = require('vm');
-const path = require('path');
 
-// Load script.js into a sandboxed context with minimal DOM stubs
-const code = fs.readFileSync(path.join(__dirname, '..', 'script.js'), 'utf8');
-const context = {
-  console,
-  document: { getElementById: () => ({ addEventListener: () => {} }) },
-  window: {}
-};
-vm.createContext(context);
-vm.runInContext(code, context);
-const toPhonemes = context.toPhonemes;
+(async () => {
+  const { toPhonemes, EN_MAP } = await import('../phoneme.js');
 
-const stringRes = toPhonemes('STRING');
-assert.strictEqual(stringRes[0].c, 'STR');
-assert.strictEqual(stringRes[0].v, 'I');
+  // English dictionary mappings
+  for (const [word, mapped] of Object.entries(EN_MAP)) {
+    assert.deepStrictEqual(
+      toPhonemes(word),
+      toPhonemes(mapped),
+      `EN_MAP mapping failed for ${word}`
+    );
+  }
 
-const sprintRes = toPhonemes('SPRINT');
-assert.strictEqual(sprintRes[0].c, 'SPR');
-assert.strictEqual(sprintRes[0].v, 'I');
+  // Katakana to phoneme conversions
+  const testRes = toPhonemes('テスト');
+  assert.deepStrictEqual(
+    testRes.map(p => p.c + p.v),
+    ['TE', 'SU', 'TO']
+  );
 
-console.log('toPhonemes cluster tests passed');
+  const catRes = toPhonemes('キャット');
+  assert.strictEqual(catRes[0].c, 'KY');
+  assert.strictEqual(catRes[0].v, 'A');
+  assert.strictEqual(catRes[1].c, 'T');
+  assert.strictEqual(catRes[1].v, 'O');
+  assert.ok(catRes[1].burst);
+
+  // Edge cases: punctuation
+  const punctRes = toPhonemes('テスト。');
+  assert.deepStrictEqual(punctRes, testRes);
+
+  // Edge cases: long vowels
+  const longRes = toPhonemes('カー');
+  assert.deepStrictEqual(
+    longRes.map(p => p.c + p.v),
+    ['KA', 'A']
+  );
+
+  console.log('toPhonemes extended tests passed');
+})();
+
