@@ -57,7 +57,7 @@ function toPhonemes(input) {
     .replace(/\s+/g, " ")
     .toUpperCase();
 
-  // カタカナ→ローマ字(主要・拗音・促音・長音)
+  // カタカナ→ローマ字（主要・拗音・促音・長音）
   const kataMap = {
     'ァ':'A','ィ':'I','ゥ':'U','ェ':'E','ォ':'O',
     'ア':'A','イ':'I','ウ':'U','エ':'E','オ':'O',
@@ -80,64 +80,60 @@ function toPhonemes(input) {
     'チャ':'CHA','チュ':'CHU','チョ':'CHO',
     'ジャ':'JA','ジュ':'JU','ジョ':'JO',
     'リャ':'RYA','リュ':'RYU','リョ':'RYO',
-    'ッ':'Q', // 促音
-    'ー':'-'  // 長音
+    'ッ':'Q','ー':'-'
   };
-  
-  // 2文字合成(ャュョ系)を先に
-  s = s.replace(/(キャ|キュ|キョ|シャ|シュ|ショ|チャ|チュ|チョ|ジャ|ジュ|ジョ|リャ|リュ|リョ)/g, m=>kataMap[m]||m);
-  // 単体
+
+  // 2文字合成(ャュョ系)を先に処理
+  s = s.replace(/(キャ|キュ|キョ|シャ|シュ|ショ|チャ|チュ|チョ|ジャ|ジュ|ジョ|リャ|リュ|リョ)/g, m => kataMap[m] || m);
+  // 単体のカタカナを置換
   s = s.replace(/[ァ-ンー]/g, ch => kataMap[ch] || ch);
 
   // 英語簡易置換
   s = applyEnglishMap(s);
 
-  // ローマ字→音素スライス
   const syl = [];
   const tokens = s.split(/\s+/).filter(Boolean);
+  const VOW = /[AIUEO]/;
+  const CONS = /[BCDFGHJKLMNPQRSTVWXZ]/;
+
   tokens.forEach(tok => {
-    // 長音：母音重ね (単語末でも確実に効くように)
-    tok = tok.replace(/([AIUEO])-+/g, "$1$1");
-    
+    tok = tok.replace(/([AIUEO])-+/g, "$1$1"); // 長音処理
     let i = 0;
     while (i < tok.length) {
-      if (tok[i] === 'Q') { 
-        syl.push({c: '', v: '', len: 0, gem: true}); 
-        i++; 
-        continue; 
-      }
-      
-      let c = '', v = '';
-      if (tok.slice(i).startsWith("CH")) { c = "CH"; i += 2; }
-      else if (tok.slice(i).startsWith("SH")) { c = "SH"; i += 2; }
-      else if (tok.slice(i).startsWith("KY")) { c = "KY"; i += 2; }
-      else if (tok.slice(i).startsWith("TS")) { c = "TS"; i += 2; }
-      else if ("BCDFGHJKLMNPQRSTVWXZ".includes(tok[i])) { c = tok[i]; i++; }
+      if (tok[i] === 'Q') { syl.push({c:'',v:'',len:0,gem:true}); i++; continue; }
 
-      if ("AIUEO".includes(tok[i])) { v = tok[i]; i++; }
-      else if (tok[i] === 'Y' && "AIUEO".includes(tok[i+1])) { 
-        c = (c || '') + 'Y'; 
-        v = tok[i+1]; 
-        i += 2; 
-      }
-      else if (tok[i] === 'N' && (i === tok.length-1 || !'AIUEO'.includes(tok[i+1]))) {
-        syl.push({c: 'N', v: '', len: 60}); 
-        i++; 
-        continue; 
-      } else { 
-        i++; 
-        continue; 
+      // 子音クラスタ（CH/SH/TS、+R/L/Y連結、先行S等）
+      let c = '';
+      if (tok.slice(i).startsWith('CH')) { c='CH'; i+=2; }
+      else if (tok.slice(i).startsWith('SH')) { c='SH'; i+=2; }
+      else if (tok.slice(i).startsWith('TS')) { c='TS'; i+=2; }
+      else if (
+        tok[i] === 'S' &&
+        i + 2 < tok.length &&
+        CONS.test(tok[i + 1]) &&
+        tok[i + 2] === 'R'
+      ) { c = tok.slice(i, i + 3); i += 3; }
+      else if (CONS.test(tok[i])) {
+        c = tok[i]; i++;
+        if (i < tok.length && /[RLY]/.test(tok[i])) { c += tok[i]; i++; }
+        if (i < tok.length && CONS.test(tok[i]) && !VOW.test(tok[i])) { c += tok[i]; i++; }
       }
 
-      syl.push({c, v, len: 120});
+      let v = '';
+      if (i < tok.length && VOW.test(tok[i])) { v = tok[i]; i++; }
+      else if (tok[i] === 'Y' && VOW.test(tok[i + 1])) { c += 'Y'; v = tok[i + 1]; i += 2; }
+      else if (tok[i] === 'N' && (i === tok.length - 1 || !VOW.test(tok[i + 1]))) { syl.push({c:'N',v:'',len:60}); i++; continue; }
+      else { i++; continue; }
+
+      syl.push({ c, v, len: 140 });
     }
   });
 
-  // 促音の反映（直後をburst）
+  // 促音→burst
   for (let j = 0; j < syl.length - 1; j++) {
     if (syl[j].gem) {
       syl[j].len = 0;
-      syl[j+1].burst = true;
+      syl[j + 1].burst = true;
     }
   }
 
