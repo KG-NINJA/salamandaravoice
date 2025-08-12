@@ -14,7 +14,8 @@ function setPreset(text) {
 const $ = (id) => document.getElementById(id);
 const textEl = $("text"), rateEl = $("rate"), pitchEl = $("pitch"), bitEl = $("bit"),
       noiseEl = $("noise"), phonemesEl = $("phonemes"), statusEl = $("status"),
-      srEl = $("sr"), fsOutEl = $("fsOut"), formantGainEl = $("formantGain"), delayEl = $("delay");
+      srEl = $("sr"), fsOutEl = $("fsOut"), formantGainEl = $("formantGain"), delayEl = $("delay"),
+      vocoderEl = $("vocoder");
 
 const DEFAULTS = {
   bit: parseInt(bitEl.value, 10),
@@ -273,7 +274,7 @@ async function render(exportWav=false){
   }
 
   // ---- ポストFX → 8kHz化 ----
-  const post = processBuffer(out, sr, { fsOut, bit, cabDelay });
+  const post = processBuffer(out, sr, { fsOut, bit, cabDelay, vocoder: vocoderEl.checked });
 
   // Debug logging
   if (window.DEBUG) {
@@ -334,9 +335,25 @@ function biquadBandpassSample1(x, fc, q, fs, state){
   return y;
 }
 
-function processBuffer(data, sr, {fsOut, bit, cabDelay}){
+function processBuffer(data, sr, {fsOut, bit, cabDelay, vocoder=false}){
   const cutoff = Math.min(4500, fsOut/2 - 100); // Nyquist安全マージン
   const lp = simpleOnePoleLP(data, sr, cutoff); // ローパス（エイリアス防止）
+
+  // Vocoder-style ring modulation
+  if (vocoder){
+    const freq = 150; // 100-200 Hz range center
+    const inc = freq/sr;
+    let phase = 0, preRms = 0, postRms = 0;
+    for(let i=0;i<lp.length;i++) preRms += lp[i]*lp[i];
+    for(let i=0;i<lp.length;i++){
+      phase += inc; if (phase>=1) phase-=1;
+      const carrier = 2*phase-1;
+      lp[i] *= carrier;
+      postRms += lp[i]*lp[i];
+    }
+    const gain = Math.sqrt(preRms/(postRms||1));
+    for(let i=0;i<lp.length;i++) lp[i] = Math.tanh(lp[i]*gain*1.2);
+  }
 
   // 量子化（ビットクラッシュ）
   const step = Math.pow(2, bit)-1;
