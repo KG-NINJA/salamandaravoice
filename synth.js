@@ -85,9 +85,9 @@ function biquadBandpassSample(x, fc, q, fs) {
  * @param {Object} params - Synthesis parameters
  * @returns {Float32Array} - Raw audio data
  */
-function synthesize(phon, params) {
-  const { 
-    sr, baseF0, rate, noiseAmt, brightConsonant = false 
+function synthesize(phon, params, rng = Math.random) {
+  const {
+    sr, baseF0, rate, noiseAmt, brightConsonant = false
   } = params;
   
   // Reset BPF state for clean synthesis
@@ -117,7 +117,7 @@ function synthesize(phon, params) {
     const sylSamples = frames * frame;
     const fadeSamps = Math.min(Math.floor(sr * 0.005), Math.floor(sylSamples / 2));
     for (let k = 0; k < frames; k++) {
-      const jitter = (Math.random() - 0.5) * 4;
+      const jitter = (rng() - 0.5) * 4;
       const period = Math.max(1, Math.floor(sr / (f0 + jitter)));
 
       for (let n = 0; n < frame; n++) {
@@ -130,7 +130,7 @@ function synthesize(phon, params) {
           const ph = (idx % period);
           exc = (ph < 2) ? 1.0 : 0.0;
         } else {
-          exc = (Math.random() * 2 - 1);
+          exc = (rng() * 2 - 1);
         }
 
 
@@ -155,7 +155,7 @@ function synthesize(phon, params) {
           // 子音シャリ感: 子音時は第3フォルマントを+10%～+15%ランダム
           let fc = baseFormants[b];
           if (!v && b === 2 && brightConsonant) {
-            fc *= (1 + 0.1 + Math.random() * 0.05);
+            fc *= (1 + 0.1 + rng() * 0.05);
           }
 
           const bw = baseBw[b];
