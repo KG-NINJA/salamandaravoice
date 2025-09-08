@@ -16,7 +16,7 @@ const $ = (id) => document.getElementById(id);
 const textEl = $("text"), rateEl = $("rate"), pitchEl = $("pitch"), bitEl = $("bit"),
       noiseEl = $("noise"), phonemesEl = $("phonemes"), statusEl = $("status"),
       srEl = $("sr"), fsOutEl = $("fsOut"), formantGainEl = $("formantGain"), delayEl = $("delay"),
-      vocoderEl = $("vocoder");
+      vocoderEl = $("vocoder"), recordEl = $("record");
 
 const DEFAULTS = {
   bit: parseInt(bitEl.value, 10),
@@ -49,6 +49,7 @@ function sanitizeParam(el, parser, def, min, max) {
 
 $("speak").onclick = async () => render(false);
 $("export").onclick = async () => render(true);
+recordEl.onclick = async () => toggleRecord();
 
 // ==== 1) Grapheme→Phoneme（子音クラスタ対応） ====
 // toPhonemes is imported from phoneme.js
@@ -79,6 +80,8 @@ function baseFormantsFor(syl){
 // ==== 3) 合成 ====
 let bpStates = [{x1:0,x2:0,y1:0,y2:0},{x1:0,x2:0,y1:0,y2:0},{x1:0,x2:0,y1:0,y2:0}];
 let currentCtx = null, currentSource = null;
+let recCtx = null, recStream = null, recSource = null, recNode = null;
+let recBuffers = [], recording = false;
 
 async function render(exportWav=false, rng = Math.random){
   // BPF状態リセット
@@ -228,6 +231,56 @@ async function render(exportWav=false, rng = Math.random){
     statusEl.textContent = "WAVを書き出しました";
   } else {
     statusEl.textContent = "再生しました";
+  }
+}
+
+async function toggleRecord(){
+  if (!recording){
+    try {
+      recStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      recCtx = new (window.AudioContext || window.webkitAudioContext)();
+      recSource = recCtx.createMediaStreamSource(recStream);
+      recNode = recCtx.createScriptProcessor(4096, 1, 1);
+      recBuffers = [];
+      recNode.onaudioprocess = e => {
+        recBuffers.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+      };
+      recSource.connect(recNode);
+      recNode.connect(recCtx.destination);
+      recording = true;
+      recordEl.textContent = "■ 停止";
+      statusEl.textContent = "録音中…";
+    } catch(err){
+      statusEl.textContent = "マイクが利用できません";
+    }
+  } else {
+    recNode.disconnect();
+    recSource.disconnect();
+    recStream.getTracks().forEach(t => t.stop());
+    await recCtx.close();
+    recording = false;
+    recordEl.textContent = "🎤 ボイスチェンジ";
+    const len = recBuffers.reduce((a,b) => a + b.length, 0);
+    const buf = new Float32Array(len);
+    let offset = 0;
+    for (const b of recBuffers){
+      buf.set(b, offset);
+      offset += b.length;
+    }
+    let fsOut = parseInt(fsOutEl.value, 10);
+    if (!Number.isFinite(fsOut) || fsOut < 4000) fsOut = 8000;
+    fsOut = Math.min(fsOut, recCtx.sampleRate);
+    const bit = sanitizeParam(bitEl, v => parseInt(v,10), DEFAULTS.bit, 3, 8);
+    const cabDelay = sanitizeParam(delayEl, parseFloat, DEFAULTS.cabDelay, 0, 0.08);
+    const post = processBuffer(buf, recCtx.sampleRate, { fsOut, bit, cabDelay, vocoder: vocoderEl.checked });
+    const ctxPlay = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: fsOut });
+    await ctxPlay.resume();
+    const audioBuf = ctxPlay.createBuffer(1, post.length, fsOut);
+    audioBuf.copyToChannel(post, 0);
+    const src = ctxPlay.createBufferSource();
+    src.buffer = audioBuf; src.connect(ctxPlay.destination); src.start();
+    currentCtx = ctxPlay; currentSource = src;
+    statusEl.textContent = "変換しました";
   }
 }
 
